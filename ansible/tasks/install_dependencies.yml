@@ -1,0 +1,67 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install necessary packages
+  apt:
+    name:
+      - curl
+      - unzip
+    state: present
+
+- name: Install docker, aws cli and python dependencies
+  apt:
+    name:
+      - docker.io
+      # - awscli
+      - python3-pip
+      - python3-docker
+    state: present    #  this will ensure the packages are installed if not already present it will install them else install the latest version
+
+
+- name: Download AWS CLI v2 zip file
+  get_url:
+    url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+    dest: /tmp/awscliv2.zip
+
+- name: Unzip AWS CLI installer
+  unarchive:
+    src: /tmp/awscliv2.zip
+    dest: /tmp/
+    remote_src: yes
+    creates: /tmp/aws
+
+- name: Install AWS CLI
+  command: /tmp/aws/install
+  args:
+    creates: /usr/local/bin/aws
+
+- name: Verify AWS CLI installation
+  command: aws --version
+  register: aws_version
+  changed_when: false
+
+- name: Display AWS CLI version
+  debug:
+    msg: "{{ aws_version.stdout }}"
+
+    # Ensure docker service is started and enabled
+
+- name: Ensure docker service is started and enabled
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Add ubuntu user to docker group
+  user: 
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Reset ssh connection to aaply user groups changes
+  meta: reset_connection
+
+

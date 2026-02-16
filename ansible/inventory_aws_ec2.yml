@@ -1,0 +1,20 @@
+plugin: aws_ec2
+
+regions:
+  - ap-south-1  
+
+filters:
+  instance-state-name: running
+  tag:Role: crm-sec-quote-server
+
+hostnames:
+  - dns-name
+
+# This automatically groups servers by their tags
+keyed_groups:
+  - key: tags.Role
+    prefix: tag_role
+    separator: "_"
+
+compose:
+  ansible_user: ubuntu 

@@ -1,0 +1,145 @@
+name: Deploy to Amazon ECR and then EC2
+
+on:
+  # trigger : 1st commit to main branch
+  push:
+    branches: 
+      - main
+
+  # manual roll rollback trigger
+  workflow_dispatch:
+    inputs:
+      rollback_tag:
+        description: 'Tag to deploy(for roll back). Leave empty to deploy latest'
+        required: false
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: 484907519202.dkr.ecr.ap-south-1.amazonaws.com
+  ECR_FRONTEND: my-app-frontend
+  ECR_BACKEND: my-app-backend
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # job 1: build and push to ecr
+  build:
+    if: ${{ github.event_name == 'push'}}
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Caclulate Short SHA
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push images to Amazon ECR( BACKEND )
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $REGISTRY/$ECR_BACKEND:${{ steps.vars.outputs.sha_short}} -f ./CRM-SERVER/Dockerfile .
+
+          # Tag it as 'latest' as well
+          docker tag $REGISTRY/$ECR_BACKEND:${{ steps.vars.outputs.sha_short }} $REGISTRY/$ECR_BACKEND:latest
+
+          docker push $REGISTRY/$ECR_BACKEND:${{ steps.vars.outputs.sha_short}}
+          docker push $REGISTRY/$ECR_BACKEND:latest
+
+      - name: Build, tag, and push images to Amazon ECR( FRONTEND )
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $REGISTRY/$ECR_FRONTEND:${{ steps.vars.outputs.sha_short}} -f ./crm-client/Dockerfile .
+
+          # Tag it as 'latest' as well
+          docker tag $REGISTRY/$ECR_FRONTEND:${{ steps.vars.outputs.sha_short }} $REGISTRY/$ECR_FRONTEND:latest
+
+          docker push $REGISTRY/$ECR_FRONTEND:${{ steps.vars.outputs.sha_short}}
+          docker push $REGISTRY/$ECR_FRONTEND:latest
+
+  # job 2: deployment to ec2  
+  deploy:
+    needs: build
+    # if manual trigger, runs immediately. if push, wait for build job to complete
+    if: ${{ always() && ( github.event_name == 'workflow_dispatch' || needs.build.result == 'success' ) }}
+    runs-on: ubuntu-latest
+
+    environment: Production   // this enables the consent button
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Determining tag to Deploy
+        id: set-tag
+        run: |
+          # priority 1: manual  rollback input
+          if [ "${{ inputs.rollback_tag }}" != "" ]; then
+            echo "SELECTED_TAG=${{ inputs.rollback_tag }}" >> $GITHUB_ENV
+
+          # priority 2: new build output (if build job ran)
+          elif [ "${{ needs.build.outputs.image_tag }}" != "" ]; then
+            echo "SELECTED_TAG=${{ needs.build.outputs.image_tag }}" >> $GITHUB_ENV
+
+          # priority 3: default to latest
+          else
+            echo "SELECTED_TAG=${{ needs.build.outputs.image_tag }}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Ansible & AWS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install community.docker amazon.aws
+          echo "$SSH_KEY" > nodepemkey.pem
+          chmod 600 nodepemkey.pem
+      
+      - name: Debug Inventory
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          # This prints the group names Ansible found
+          ansible-inventory -i ansible/inventory_aws_ec2.yml --graph
+
+      - name: Run Ansible Deployment or playbook
+        env:
+          # FIX: Explicitly pass credentials here so the Inventory plugin finds them
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          
+          # Other vars
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          SELECTED_TAG: ${{ env.SELECTED_TAG }}
+          ECR_BACKEND: ${{ env.ECR_BACKEND }}
+          ECR_FRONTEND: ${{ env.ECR_FRONTEND }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          # we pass the selected tag to ansible playbook
+          ansible-playbook -i ansible/inventory_aws_ec2.yml ansible/deploy-stack.yml  \
+          -u ubuntu \
+          --private-key nodepemkey.pem \
+          --extra-vars "registry=$ECR_REGISTRY tag=$SELECTED_TAG be_repo=$ECR_BACKEND fe_repo=$ECR_FRONTEND region=$AWS_REGION mongo_uri='$MONGO_URI' jwt_secret='$JWT_SECRET'" \
+          --ssh-common-args='-o StrictHostKeyChecking=no' 

@@ -1,0 +1,93 @@
+---
+- name: Deploy Frontned & Backend Stack
+  hosts: tag_role_crm_sec_quote_server
+  become: yes
+  gather_facts: no # speeds up connection if python isn't installed yet
+  vars:
+    region: "ap-south-1"
+    registry: "484907519202.dkr.ecr.ap-south-1.amazonaws.com"
+
+    be_repo: "my-app-backend"
+    fe_repo: "my-app-frontend"
+
+    # we use the same tag for both if built from the same commit , or seperate if needed
+    tag: "latest"
+
+  tasks:
+    - name: Wait for SSH to be ready
+      wait_for_connection:
+        timeout: 300
+
+    - name: Check it docker & aws cli is already installed
+      shell: "docker --version && aws --version"
+      register: dependencies_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Conditioned Triggered: Docker missing running setup..."
+      include_tasks: tasks/install_dependencies.yml
+      when: dependencies_check.rc != 0  # only runs if the check above failed
+
+    - name: Stop and remove existing containers to free space
+      docker_container:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - my-app-backend
+        - my-app-frontend
+      ignore_errors: yes
+
+    - name: Prune unused Docker objects to free space
+      command: docker system prune -af
+      ignore_errors: yes
+      changed_when: true
+
+    - name: Login to ecr
+      shell: |
+        aws ecr get-login-password --region {{ region }} | docker login --username AWS --password-stdin {{ registry }}
+      changed_when: false
+
+    # Pull Backend Image
+    - name: Pull Backend Image
+      docker_image:
+        name: "{{ registry }}/{{ be_repo }}:{{ tag }}"
+        source: pull
+        force_source: yes
+
+    # --- DEBUGGING STEP (Added this to check the image name) ---
+    - name: Debug Image Name
+      debug:
+        msg: "Attempting to start container with image: {{ registry | trim }}/{{ be_repo | trim }}:{{ tag | trim }}"
+
+    - name: Start Backend Container
+      docker_container:
+        name: my-app-backend
+        image: "{{ registry | trim }}/{{ be_repo | trim }}:{{ tag | trim }}"
+        state: started
+        restart_policy: always
+        ports:
+          - "5000:5000"
+        env:
+          MONGODB_URI: "{{ mongo_uri }}"
+          JWT_SECRET: "{{ jwt_secret }}"
+          PORT: "5000" 
+
+    # Pull Frontend Image
+    - name: Pull Frontend Image
+      docker_image:
+        name: "{{ registry }}/{{ fe_repo }}:{{ tag }}"
+        source: pull
+        force_source: yes
+    
+    - name: Start Frontend Container
+      docker_container:
+        name: my-app-frontend
+        image: "{{ registry }}/{{ fe_repo }}:{{ tag }}"
+        state: started
+        restart_policy: always
+        ports:
+          - "8080:80" 
+        links:
+          - my-app-backend:backend
+    
+

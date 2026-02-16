@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Quotation</title>
+    <style>
+      @page {
+        margin: 0; /* Vital: Removes Puppeteer's default white border */
+      }
+      body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-size: 10px;
+        color: #333;
+        margin: 0; /* Vital: Allows header to touch edges */
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* FIXED HEADER - FULL WIDTH */
+      header.pdf-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%; /* Forces full A4 width */
+        height: 100px;
+        z-index: 1000;
+        background: white; /* Prevents text bleeding behind it */
+      }
+      header.pdf-header img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Ensures image covers the full box without gaps */
+        display: block;
+      }
+
+      /* FIXED FOOTER - FULL WIDTH */
+      footer.pdf-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%; /* Forces full A4 width */
+        height: 110px;
+        z-index: 1000;
+        background: white;
+      }
+      footer.pdf-footer img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      /* CONTENT WRAPPER - This handles the "Margins" for text only */
+      .page-content {
+        margin-top: 110px; /* Pushes text below Header */
+        margin-bottom: 120px; /* Pushes text above Footer */
+        margin-left: 15mm; /* Left Margin */
+        margin-right: 15mm; /* Right Margin */
+      }
+
+      /* --- REST OF THE STYLING (UNCHANGED) --- */
+      .top-section {
+        display: table;
+        width: 100%;
+        margin-bottom: 20px;
+      }
+      .bill-to {
+        display: table-cell;
+        width: 60%;
+        vertical-align: top;
+      }
+      .quote-meta {
+        display: table-cell;
+        width: 40%;
+        vertical-align: top;
+        text-align: right;
+      }
+      
+      .meta-table { width: 100%; border-collapse: collapse; }
+      .meta-table td { padding: 2px 0; text-align: right; }
+      .meta-label { font-weight: bold; color: #555; padding-right: 10px; }
+      .meta-value { font-weight: bold; color: #000; }
+
+      .subject-line { font-weight: bold; margin-bottom: 10px; font-size: 11px; text-decoration: underline; }
+      .intro-text { margin-bottom: 20px; text-align: justify; }
+
+      /* TABLE */
+      .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+      .items-table th {
+        background-color: #2c3e50;
+        color: white;
+        padding: 8px 5px;
+        text-align: left;
+        font-weight: bold;
+        font-size: 9px;
+        text-transform: uppercase;
+        border: 1px solid #2c3e50;
+      }
+      .items-table td { padding: 8px 5px; border: 1px solid #ddd; vertical-align: top; }
+      .items-table tr:nth-child(even) { background-color: #f9f9f9; }
+      
+      .col-sn { width: 5%; text-align: center; }
+      .col-desc { width: 35%; }
+      .col-brand { width: 10%; }
+      .col-model { width: 10%; }
+      .col-qty { width: 5%; text-align: center; }
+      .col-price { width: 12%; text-align: right; }
+      .col-gst { width: 8%; text-align: right; }
+      .col-total { width: 15%; text-align: right; }
+
+      /* TOTALS */
+      .totals-container { width: 100%; display: table; margin-bottom: 30px; }
+      .totals-spacer { display: table-cell; width: 50%; }
+      .totals-box { display: table-cell; width: 50%; }
+      .totals-table { width: 100%; border-collapse: collapse; }
+      .totals-table td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #eee; }
+      .totals-label { font-weight: bold; color: #555; }
+      .grand-total-row td { background-color: #2c3e50; color: white; font-weight: bold; font-size: 12px; padding: 8px; border: none; }
+
+      /* FOOTER CONTENT */
+      .footer-content { page-break-inside: avoid; }
+      .terms-section { margin-bottom: 30px; }
+      .terms-section h4 { margin: 0 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #ccc; display: inline-block; padding-bottom: 2px; }
+      .terms-list { list-style: none; padding: 0; margin: 0; }
+      .terms-list li { margin-bottom: 4px; padding-left: 15px; position: relative; }
+      .terms-list li::before { content: "•"; position: absolute; left: 0; color: #2c3e50; }
+
+      .signature-section { margin-top: 40px; text-align: right; }
+      .signature-box { display: inline-block; text-align: left; min-width: 200px; }
+      .sign-line { border-bottom: 1px solid #000; margin-top: 40px; margin-bottom: 5px; }
+    </style>
+  </head>
+  <body>
+    <% if (headerImage) { %>
+    <header class="pdf-header">
+      <img src="<%= headerImage %>" alt="Header" />
+    </header>
+    <% } %>
+
+    <div class="page-content">
+      
+      <div class="top-section">
+        <div class="bill-to">
+          <div style="background: #2c3e50; color: white; padding: 5px 10px; display: inline-block; font-weight: bold; margin-bottom: 10px;">
+            BILL TO
+          </div>
+          <div style="padding-left: 2px;">
+            <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;"><%= recipientName %></div>
+            <div style="color: #555; white-space: pre-line;"><%= clientAddress %></div>
+          </div>
+        </div>
+
+        <div class="quote-meta">
+          <table class="meta-table" align="right">
+             <tr>
+               <td class="meta-label">DATE:</td>
+               <td class="meta-value"><%= new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></td>
+             </tr>
+             <tr>
+               <td class="meta-label">VALID UNTIL:</td>
+               <td class="meta-value">
+                 <%= quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : "15 Days" %>
+               </td>
+             </tr>
+             <tr>
+               <td class="meta-label">QUOTE NO:</td>
+               <td class="meta-value"><%= quotation.quotationNo || "Draft" %></td>
+             </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="subject-line">
+        Subject: <%= subjectLine %>
+      </div>
+
+      <div class="intro-text">
+        Dear Sir,<br/><br/>
+        With reference to the subject, please find below the commercials for the subjected requirement. 
+        Requesting your kind approval along with a formal PO in favor of <strong><%= companyName %></strong>.
+      </div>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-sn">#</th>
+            <th class="col-desc">DESCRIPTION</th>
+            <th class="col-brand">BRAND</th>
+            <th class="col-model">MODEL</th>
+            <th class="col-qty">QTY</th>
+            <th class="col-price">UNIT PRICE</th>
+            <% if (withGst) { %>
+            <th class="col-gst">GST</th>
+            <% } %>
+            <th class="col-total">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% items.forEach((item, index) => { %>
+          <tr>
+            <td class="col-sn"><%= index + 1 %></td>
+            <td class="col-desc">
+              <strong><%= item.productName %></strong>
+              <% if (item.description) { %>
+                <br/><span style="color: #666; font-size: 9px;"><%= item.description %></span>
+              <% } %>
+            </td>
+            <td class="col-brand"><%= item.brand || "-" %></td>
+            <td class="col-model"><%= item.model || "-" %></td>
+            <td class="col-qty"><%= item.qty %></td>
+            <td class="col-price"><%= Number(item.unitPrice).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            <% if (withGst) { %>
+            <td class="col-gst">
+              <%= item.gstRate %>%
+              <div style="font-size: 8px; color: #666;"><%= Number(item.gstAmount).toLocaleString('en-IN', {minimumFractionDigits: 0}) %></div>
+            </td>
+            <% } %>
+            <td class="col-total"><strong><%= Number(item.total).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></strong></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+
+      <div class="totals-container">
+        <div class="totals-spacer"></div>
+        <div class="totals-box">
+          <table class="totals-table">
+            <tr>
+              <td class="totals-label">Sub Total</td>
+              <td><%= Number(itemsBaseTotal).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% if (withGst) { %>
+            <tr>
+              <td class="totals-label">Total GST</td>
+              <td><%= Number(itemsGstTotal).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% } %>
+            
+            <% if (freightTotal > 0) { %>
+            <tr>
+              <td class="totals-label">Freight Charges</td>
+              <td><%= Number(freightCharges).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% if (withGst && freightGstAmount > 0) { %>
+            <tr>
+              <td class="totals-label">Freight GST (<%= freightGstRate %>%)</td>
+              <td><%= Number(freightGstAmount).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% } %>
+            <% } %>
+
+            <% if (installationTotal > 0) { %>
+            <tr>
+              <td class="totals-label">Installation Charges</td>
+              <td><%= Number(installationCharges).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% if (withGst && installationGstAmount > 0) { %>
+            <tr>
+              <td class="totals-label">Installation GST</td>
+              <td><%= Number(installationGstAmount).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+            <% } %>
+            <% } %>
+
+            <tr class="grand-total-row">
+              <td style="text-align: left;">Grand Total</td>
+              <td>₹ <%= Number(grandTotal).toLocaleString('en-IN', {minimumFractionDigits: 2}) %></td>
+            </tr>
+          </table>
+          <div style="text-align: right; font-size: 9px; margin-top: 5px; color: #666;">
+            (Amount in Indian Rupees)
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-content">
+        <div class="terms-section">
+          <h4>TERMS & CONDITIONS</h4>
+          <ul class="terms-list">
+            <li><strong>Purchase Order:</strong> Formal PO should be issued in favor of <%= companyName %>.</li>
+            <li><strong>Prices:</strong> The prices are valid for the period of 15 days from the date of this proposal.</li>
+            <li><strong>Payment Terms:</strong> 100% against delivery unless specified otherwise.</li>
+            <li><strong>Delivery:</strong> 6-8 weeks from releasing formal PO.</li>
+            <li><strong>GST / Taxes:</strong> Taxes will be charged extra as applicable.</li>
+            <li><strong>Freight:</strong> Freight charges will be extra as per actual.</li>
+            <li><strong>Warranty:</strong> As per OEM standard warranty.</li>
+            <li><strong>Installation:</strong> Services not covered unless explicitly mentioned.</li>
+          </ul>
+        </div>
+
+        <div class="signature-section">
+          <div class="signature-box">
+            <strong>For <%= companyName %></strong>
+            <div style="height: 40px;"></div>
+            <div class="sign-line"></div>
+            <div style="font-weight: bold; text-transform: uppercase;"><%= requesterName %></div>
+            <div style="font-size: 10px;">Authorized Signatory</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <% if (footerImage) { %>
+    <footer class="pdf-footer">
+      <img src="<%= footerImage %>" alt="Footer" />
+    </footer>
+    <% } %>
+
+  </body>
+</html>
