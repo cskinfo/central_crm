@@ -1,22 +1,11 @@
-import User from '../models/User.js';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // register user
-export const registerUser = async (req, res) => {
+exports.registerUser = async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      username,
-      email,
-      password,
-      phone,
-      empId,
-      zone,
-      doj,
-      role,
-    } = req.body;
+    const { firstName, lastName, username, email, password, phone, empId, zone, doj, role } = req.body;
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
@@ -24,16 +13,7 @@ export const registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const user = await User.create({
-      firstName,
-      lastName,
-      username,
-      email,
-      password: hashedPassword,
-      phone,
-      empId,
-      zone,
-      doj,
-      role,
+      firstName, lastName, username, email, password: hashedPassword, phone, empId, zone, doj, role,
     });
     if (user) {
       res.status(201).json({
@@ -41,9 +21,7 @@ export const registerUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-          expiresIn: '30d',
-        }),
+        token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' }),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -54,7 +32,7 @@ export const registerUser = async (req, res) => {
 };
 
 // login user
-export const loginUser = async (req, res) => {
+exports.loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -66,9 +44,7 @@ export const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        token: jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
-          expiresIn: '30d',
-        }),
+        token: jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '30d' }),
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -79,7 +55,7 @@ export const loginUser = async (req, res) => {
 };
 
 // get all users
-export const getUsers = async (req, res) => {
+exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({});
     res.json(users);
@@ -89,7 +65,7 @@ export const getUsers = async (req, res) => {
 };
 
 // get user by id
-export const getUserById = async (req, res) => {
+exports.getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('-password');
     if (user) {
@@ -103,7 +79,7 @@ export const getUserById = async (req, res) => {
 };
 
 // update user profile
-export const updateUserProfile = async (req, res) => {
+exports.updateUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (user) {
@@ -141,7 +117,7 @@ export const updateUserProfile = async (req, res) => {
 };
 
 // delete user
-export const deleteUser = async (req, res) => {
+exports.deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (user) {
@@ -156,7 +132,7 @@ export const deleteUser = async (req, res) => {
 };
 
 // reset password
-export const resetPassword = async (req, res) => {
+exports.resetPassword = async (req, res) => {
   try {
     const { userId, newPassword } = req.body;
     const salt = await bcrypt.genSalt(10);
@@ -169,10 +145,9 @@ export const resetPassword = async (req, res) => {
 };
 
 // Get the user's profile
-export const getUserProfile = async (req, res) => {
+exports.getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-
     if (user) {
       res.json({
         _id: user._id,
@@ -189,6 +164,6 @@ export const getUserProfile = async (req, res) => {
 };
 
 // Logout user
-export const logoutUser = (req, res) => {
+exports.logoutUser = (req, res) => {
   res.status(200).json({ message: 'User logged out' });
 };

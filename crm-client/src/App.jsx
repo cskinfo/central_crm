@@ -1,9 +1,7 @@
-// App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import React from "react";
 
 // Import your pages and components
-import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import SubAdminDashboard from "./pages/SubAdminDashboard"; 
 import SalesDashboard from "./pages/SalesDashboard";
@@ -11,9 +9,8 @@ import Leads from "./pages/Leads";
 import Customers from "./pages/Customers";
 import LeadDetails from "./pages/LeadDetails";
 import OpportunitiesPage from "./pages/OpportunitiesPage";
-import OpportunityDetailPage from "./pages/OpportunityDetailPage";
-import OpportunityFormPage from "./pages/OpportunityFormPage";
 import OpportunityViewPage from "./pages/OpportunityViewPage";
+import OpportunityFormPage from "./pages/OpportunityFormPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ReportsPage from "./pages/ReportsPage";
 import CreateSalesperson from "./Components/CreateSalesPerson";
@@ -26,7 +23,8 @@ import SalespersonDetailPage from "./pages/SalespersonDetailPage";
 import QuotationApprovals from "./pages/QuotationApprovalPage";
 import CostSheetListPage from "./pages/CostSheetListPage";
 import ProjectCostSheet from "./pages/ProjectCostSheet";
-import ConfigPage from "./pages/ConfigPage"; // <--- 1. NEW IMPORT
+import ConfigPage from "./pages/ConfigPage";
+import SSOCallback from "./pages/SSOCallback"; // <--- ADDED SSO CALLBACK IMPORT
 
 // Import your layout components
 import AdminLayout from "./layouts/AdminLayout";
@@ -39,11 +37,20 @@ function App() {
   return (
     <>
       <BrowserRouter>
-      
-        
         <Routes>
-          {/* Public Route */}
-          <Route path="/" element={<Login />} />
+          {/* 1. UPDATED PUBLIC ROUTE: Redirects to Central Login if no token exists */}
+          <Route path="/" element={(() => {
+            const token = localStorage.getItem("token");
+            if (token) {
+              return <Navigate to="/admin" />;
+            } else {
+              window.location.href = "http://localhost:3000"; // URL of your Central Login
+              return null;
+            }
+          })()} />
+
+          {/* 2. ADDED SSO CALLBACK ROUTE */}
+          <Route path="/sso-login" element={<SSOCallback />} />
 
           {/* Admin Routes */}
           <Route path="/admin" element={<AdminLayout />}>
@@ -52,25 +59,16 @@ function App() {
             <Route path="leads/:id" element={<LeadDetails />} />
             <Route path="customers" element={<Customers />} />
             <Route path="opportunities" element={<OpportunitiesPage />} />
-            <Route
-              path="opportunities/:id/view"
-              element={<OpportunityViewPage />}
-            />
+            <Route path="opportunities/:id/view" element={<OpportunityViewPage />} />
             <Route path="create-salesperson" element={<CreateSalesperson />} />
             <Route path="salesperson-list" element={<SalespersonList />} />
-            <Route
-              path="salesperson-list/:id"
-              element={<SalespersonDetailPage />}
-            />
+            <Route path="salesperson-list/:id" element={<SalespersonDetailPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="todos" element={<TodoPage />} />
             <Route path="broadcast" element={<BroadcastPage />} />
             <Route path="quotation-approvals" element={<QuotationApprovals />} />
-            
-            {/* 3. NEW CONFIG ROUTE ADDED HERE */}
             <Route path="config" element={<ConfigPage />} />
-            
           </Route>
 
           <Route element={<AdminLayout />}>
@@ -85,14 +83,8 @@ function App() {
             <Route path="quotation-approvals" element={<QuotationApprovals />} />
           </Route>
           <Route element={<SubAdminLayout />}>
-            <Route
-              path="/sub-admin/cost-sheets"
-              element={<CostSheetListPage />}
-            />
-            <Route
-              path="/sub-admin/cost-sheets/:id"
-              element={<ProjectCostSheet />}
-            />
+            <Route path="/sub-admin/cost-sheets" element={<CostSheetListPage />} />
+            <Route path="/sub-admin/cost-sheets/:id" element={<ProjectCostSheet />} />
           </Route>
 
           {/* Salesperson Routes */}
@@ -102,10 +94,7 @@ function App() {
             <Route path="leads/:id" element={<LeadDetails />} />
             <Route path="customers" element={<Customers />} />
             <Route path="opportunities" element={<OpportunitiesPage />} />
-            <Route
-              path="opportunities/:id/view"
-              element={<OpportunityViewPage />}
-            />
+            <Route path="opportunities/:id/view" element={<OpportunityViewPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="todos" element={<TodoPage />} />
@@ -124,7 +113,6 @@ function App() {
             <Route path=":id/edit" element={<OpportunityFormPage />} />
           </Route>
 
-          {/* Fallback Route */}
           <Route path="*" element={<div>404 Not Found</div>} />
         </Routes>
         <ToastContainer position="top-center" autoClose={4000} />
