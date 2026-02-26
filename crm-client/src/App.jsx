@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import React from "react";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-// Import your pages and components
+// Page and Component Imports
 import AdminDashboard from "./pages/AdminDashboard";
 import SubAdminDashboard from "./pages/SubAdminDashboard"; 
 import SalesDashboard from "./pages/SalesDashboard";
@@ -9,47 +11,69 @@ import Leads from "./pages/Leads";
 import Customers from "./pages/Customers";
 import LeadDetails from "./pages/LeadDetails";
 import OpportunitiesPage from "./pages/OpportunitiesPage";
-import OpportunityViewPage from "./pages/OpportunityViewPage";
 import OpportunityFormPage from "./pages/OpportunityFormPage";
+import OpportunityViewPage from "./pages/OpportunityViewPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ReportsPage from "./pages/ReportsPage";
 import CreateSalesperson from "./Components/CreateSalesPerson";
 import SalespersonList from "./Components/SalespersonList";
 import TodoPage from "./pages/TodoPage";
 import BroadcastPage from "./pages/BroadcastPage";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 import SalespersonDetailPage from "./pages/SalespersonDetailPage";
 import QuotationApprovals from "./pages/QuotationApprovalPage";
 import CostSheetListPage from "./pages/CostSheetListPage";
 import ProjectCostSheet from "./pages/ProjectCostSheet";
 import ConfigPage from "./pages/ConfigPage";
-import SSOCallback from "./pages/SSOCallback"; // <--- ADDED SSO CALLBACK IMPORT
 
-// Import your layout components
+// SSO AND LOGIN IMPORTS
+import SSOCallback from "./pages/SSOCallback";
+import Login from "./pages/Login"; // Kept for local fallback if needed
+
+// Layout Imports
 import AdminLayout from "./layouts/AdminLayout";
 import SalesLayout from "./layouts/SalesLayout";
 import SubAdminLayout from "./layouts/SubAdminLayout";
 import OpportunityLayout from "./layouts/OpportunityLayout";
 import ChangePassword from "./Components/ChangePassword";
 
+// -----------------------------------------------------------------
+// SAFE REDIRECT GUARD
+// -----------------------------------------------------------------
+function CentralAuthGuard() {
+  const token = localStorage.getItem("token");
+
+  React.useEffect(() => {
+    // Perform the external redirect safely inside useEffect
+    if (!token) {
+      window.location.href = "http://localhost:3000";
+    }
+  }, [token]);
+
+  // If a token exists, send them to the admin dashboard
+  if (token) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  // Show a blank screen or loader while waiting for the browser to redirect
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <h2>Redirecting to Central Login...</h2>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------
+// MAIN APP COMPONENT
+// -----------------------------------------------------------------
 function App() {
   return (
     <>
       <BrowserRouter>
         <Routes>
-          {/* 1. UPDATED PUBLIC ROUTE: Redirects to Central Login if no token exists */}
-          <Route path="/" element={(() => {
-            const token = localStorage.getItem("token");
-            if (token) {
-              return <Navigate to="/admin" />;
-            } else {
-              window.location.href = "http://localhost:3000"; // URL of your Central Login
-              return null;
-            }
-          })()} />
+          {/* 1. CENTRAL AUTH REDIRECT - USING THE GUARD */}
+          <Route path="/" element={<CentralAuthGuard />} />
 
-          {/* 2. ADDED SSO CALLBACK ROUTE */}
+          {/* 2. SSO CALLBACK ROUTE */}
           <Route path="/sso-login" element={<SSOCallback />} />
 
           {/* Admin Routes */}

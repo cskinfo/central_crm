@@ -14,14 +14,23 @@ export default function SSOCallback() {
         // 1. Save Token
         localStorage.setItem("token", token);
 
-        // 2. Decode Token to get User Info
+        // 2. Decode Token
         const decoded = jwtDecode(token);
+        console.log("Decoded Token Payload:", decoded); // <-- Check your console!
         
-        // 3. Find the Role specifically for 'crm' from the central assignedApps array
-        const crmApp = decoded.assignedApps ? decoded.assignedApps.find(app => app.appName === 'crm') : null;
+        // 3. FIX: Safely parse assignedApps 
+        let apps = [];
+        if (decoded.assignedApps) {
+          apps = typeof decoded.assignedApps === 'string' 
+            ? JSON.parse(decoded.assignedApps) 
+            : decoded.assignedApps;
+        }
+
+        // 4. Find the CRM role
+        const crmApp = apps.find(app => app.appName === 'crm');
         const userRole = crmApp ? crmApp.role : 'user';
 
-        // 4. Construct User Object for local state
+        // 5. Construct User Object
         const userObj = {
           id: decoded.id || decoded._id,
           username: decoded.username,
@@ -31,27 +40,29 @@ export default function SSOCallback() {
           lastName: decoded.lastName
         };
 
-        // 5. Save User Object
         localStorage.setItem("user", JSON.stringify(userObj));
 
-        // 6. Redirect based on the CRM Role
+        // 6. Redirect to the appropriate dashboard
         if (userRole === 'admin') navigate("/admin");
         else if (userRole === 'salesperson') navigate("/sales");
         else if (userRole === 'sub-admin') navigate("/sub-admin");
-        else navigate("/admin"); // Default fallback
+        else navigate("/admin"); // Default
 
       } catch (error) {
-        console.error("Token decoding failed:", error);
-        window.location.href = "http://localhost:3000"; // Redirect to central login on error
+        console.error("❌ Token decoding failed:", error);
+        // Temporarily commented out so you can read the error in the console
+        // window.location.href = "http://localhost:3000"; 
       }
     } else {
-      window.location.href = "http://localhost:3000";
+      console.error("❌ No token found in URL");
+      // window.location.href = "http://localhost:3000";
     }
   }, [searchParams, navigate]);
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column' }}>
       <h2>Connecting to Central Auth System...</h2>
+      <p>If you are stuck here, open Developer Tools (F12) and check the Console tab for errors.</p>
     </div>
   );
 }
