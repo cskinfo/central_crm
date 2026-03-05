@@ -10,21 +10,9 @@ const BroadcastSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  sender: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-  },
-  // An array of user IDs who will receive the message
-  recipients: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
-  // An array to track which recipients have read the message
-  readBy: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
+  sender: { type: String, required: true },
+  recipients: [{ type: String }],
+  readBy: [{ type: String }],
   createdAt: {
     type: Date,
     default: Date.now,

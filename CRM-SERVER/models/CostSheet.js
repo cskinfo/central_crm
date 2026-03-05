@@ -69,7 +69,7 @@ const CostSheetSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   isLatest: { type: Boolean, default: true },
 
-  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  updatedBy: { type: String },
   updatedAt: { type: Date, default: Date.now },
 });
 

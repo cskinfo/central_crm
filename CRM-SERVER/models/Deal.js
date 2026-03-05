@@ -42,8 +42,8 @@ const DealSchema = new mongoose.Schema({
     default: "New",
   },
   assignedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
+    type: Number,
+    // ref: "User",
   },
   currentStatus: { type: String },
   closureMonth: { type: String },

@@ -33,10 +33,10 @@ const LeadSchema = new mongoose.Schema({
     postalCode: String,
     country: String,
   },
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  leadOwner: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  assignedTo: { type: String },
+  leadOwner: { type:String },
   createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
+    type:String,
     ref: "User",
     required: true,
   },
@@ -50,7 +50,7 @@ const LeadSchema = new mongoose.Schema({
       date: { type: Date, default: Date.now },
       summary: String,
       details: String,
-      performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      performedBy: { type: String },
     },
   ],
   stage: {

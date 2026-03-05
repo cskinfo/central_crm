@@ -20,16 +20,8 @@ const ItemSchema = new mongoose.Schema(
 const QuotationSchema = new mongoose.Schema(
   {
     deal: { type: mongoose.Schema.Types.ObjectId, ref: "Deal", required: true },
-    requestedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    approvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+    requestedBy: { type: String, required: true },
+    approvedBy: { type: String, default: null },
     status: {
       type: String,
       enum: ["Pending", "Approved", "Rejected"],

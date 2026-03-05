@@ -12,8 +12,7 @@ const TodoSchema = new mongoose.Schema({
   },
   // This links each to-do item to a specific user
   user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String,
     required: true,
   },
   createdAt: {
