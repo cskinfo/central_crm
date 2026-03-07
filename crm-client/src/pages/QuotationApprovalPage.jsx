@@ -28,10 +28,11 @@ import {
   Stack,
   Alert,
 } from "@mui/material";
-import { Add, Delete, Check, Close } from "@mui/icons-material";
+import { Add, Delete, Check, Close, Download, Visibility } from "@mui/icons-material";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { toast } from "react-toastify";
+import * as XLSX from "xlsx";
 
 // GST slabs
 const GST_SLABS = [0, 5, 12, 18, 28];
@@ -48,6 +49,11 @@ export default function QuotationApprovalPage() {
   const [statusFilter, setStatusFilter] = useState("Pending");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Filter States
+  const [searchTerm, setSearchTerm] = useState("");
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
 
   // Approve dialog state
   const [openDialog, setOpenDialog] = useState(false);
@@ -88,16 +94,55 @@ export default function QuotationApprovalPage() {
     }
   }
 
+  // Filter Logic for Table and Export
+  const filteredQuotations = useMemo(() => {
+    return quotations.filter((q) => {
+      const opportunityId = (q.deal?.opportunityId || "").toLowerCase();
+      const customer = (q.deal?.customer || q.recipientName || "").toLowerCase();
+      const search = searchTerm.toLowerCase();
+      const matchesSearch = opportunityId.includes(search) || customer.includes(search);
+
+      const createdAt = new Date(q.createdAt);
+      const matchesStart = !startDate || createdAt >= new Date(startDate.setHours(0, 0, 0, 0));
+      const matchesEnd = !endDate || createdAt <= new Date(endDate.setHours(23, 59, 59, 999));
+
+      return matchesSearch && matchesStart && matchesEnd;
+    });
+  }, [quotations, searchTerm, startDate, endDate]);
+
+  const handleExportExcel = () => {
+    if (filteredQuotations.length === 0) {
+      toast.warn("No data available to export with current filters.");
+      return;
+    }
+
+    const exportData = filteredQuotations.map((q) => ({
+      "Opportunity ID": q.deal?.opportunityId || "-",
+      Customer: q.deal?.customer || q.recipientName || "-",
+      "Requested By": q.requestedBy?.username || q.requestedBy?.firstName || "-",
+      Status: q.status,
+      Amount: q.amount || 0,
+      "Valid Until": q.validUntil ? new Date(q.validUntil).toLocaleDateString() : "-",
+      "Created At": new Date(q.createdAt).toLocaleDateString(),
+      Products: (Array.isArray(q.items) ? q.items : [])
+        .map((it) => `${it.productName} (Qty: ${it.qty})`)
+        .join(", "),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Quotations");
+    XLSX.writeFile(workbook, `Quotations_${statusFilter}_${new Date().toLocaleDateString()}.xlsx`);
+  };
+
   const handleChangePage = (_, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (e) => {
     setRowsPerPage(parseInt(e.target.value, 10));
     setPage(0);
   };
 
-  // --- UPDATED OPEN DIALOG LOGIC ---
   const openApproveDialog = (quotation) => {
     setSelectedQuotation(quotation);
-
     const raw =
       quotation.items && quotation.items.length
         ? quotation.items
@@ -108,19 +153,13 @@ export default function QuotationApprovalPage() {
     const normalized = (Array.isArray(raw) ? raw : [raw]).map((it) => {
       const dbUnitPrice = Number(it.unitPrice ?? it.price ?? 0);
       const dbTargetPrice = Number(it.targetPrice ?? 0);
-
       let uiTargetPrice = 0;
       let uiVendorPrice = 0;
 
-      // LOGIC FIX:
-      // If status is Pending, the value in 'unitPrice' is actually the Salesperson's request.
-      // We must move it to 'targetPrice' UI field and clear 'unitPrice' UI field for Admin.
       if (quotation.status === "Pending") {
-        // If dbTargetPrice exists (from a re-edit), use it. Otherwise use the unitPrice as target.
         uiTargetPrice = dbTargetPrice > 0 ? dbTargetPrice : dbUnitPrice;
-        uiVendorPrice = 0; // Reset to 0 so Admin fills it
+        uiVendorPrice = 0;
       } else {
-        // If Approved/Rejected, the unitPrice is the final Vendor Price.
         uiTargetPrice = dbTargetPrice;
         uiVendorPrice = dbUnitPrice;
       }
@@ -137,23 +176,7 @@ export default function QuotationApprovalPage() {
       };
     });
 
-    setItems(
-      normalized.length
-        ? normalized
-        : [
-            {
-              productName: "",
-              description: "",
-              brand: "",
-              model: "",
-              qty: 1,
-              unitPrice: 0,
-              targetPrice: 0,
-              gstRate: 0,
-            },
-          ]
-    );
-
+    setItems(normalized.length ? normalized : [{ productName: "", description: "", brand: "", model: "", qty: 1, unitPrice: 0, targetPrice: 0, gstRate: 0 }]);
     setFreightCharges(Number(quotation.freightCharges || 0));
     setFreightGstRate(Number(quotation.freightGstRate || 0));
     setInstallationCharges(Number(quotation.installationCharges || 0));
@@ -161,7 +184,6 @@ export default function QuotationApprovalPage() {
     setRemarksForSalesperson(quotation.remarksForSalesperson || "");
     setInternalRemarks(quotation.internalRemarks || "");
     setValidUntil(quotation.validUntil ? new Date(quotation.validUntil) : null);
-
     setOpenDialog(true);
   };
 
@@ -182,12 +204,7 @@ export default function QuotationApprovalPage() {
 
   const handleItemChange = (index, field, value) => {
     const copy = items.slice();
-    if (
-      field === "qty" ||
-      field === "unitPrice" ||
-      field === "targetPrice" ||
-      field === "gstRate"
-    ) {
+    if (["qty", "unitPrice", "targetPrice", "gstRate"].includes(field)) {
       copy[index][field] = value === "" ? "" : Number(value);
     } else {
       copy[index][field] = value;
@@ -196,19 +213,7 @@ export default function QuotationApprovalPage() {
   };
 
   const addItem = () => {
-    setItems([
-      ...items,
-      {
-        productName: "",
-        description: "",
-        brand: "",
-        model: "",
-        qty: 1,
-        unitPrice: 0,
-        targetPrice: 0,
-        gstRate: 0,
-      },
-    ]);
+    setItems([...items, { productName: "", description: "", brand: "", model: "", qty: 1, unitPrice: 0, targetPrice: 0, gstRate: 0 }]);
   };
 
   const removeItem = (index) => {
@@ -229,17 +234,10 @@ export default function QuotationApprovalPage() {
       itemsTotal += base + gstAmt;
     });
 
-    const freightGstAmount =
-      (Number(freightCharges || 0) * Number(freightGstRate || 0)) / 100;
+    const freightGstAmount = (Number(freightCharges || 0) * Number(freightGstRate || 0)) / 100;
     const freightTotalWithGst = Number(freightCharges || 0) + freightGstAmount;
-
-    const instCharge = Number(installationCharges || 0);
-    const instGstRate = Number(installationGstRate || 0);
-    const installationGstAmount = (instCharge * instGstRate) / 100;
-    const installationTotalWithGst = instCharge + installationGstAmount;
-
-    const grandTotal =
-      itemsTotal + freightTotalWithGst + installationTotalWithGst;
+    const installationGstAmount = (Number(installationCharges || 0) * Number(installationGstRate || 0)) / 100;
+    const installationTotalWithGst = Number(installationCharges || 0) + installationGstAmount;
 
     return {
       itemsBaseTotal,
@@ -249,15 +247,9 @@ export default function QuotationApprovalPage() {
       freightTotalWithGst,
       installationGstAmount,
       installationTotalWithGst,
-      grandTotal,
+      grandTotal: itemsTotal + freightTotalWithGst + installationTotalWithGst,
     };
-  }, [
-    items,
-    freightCharges,
-    freightGstRate,
-    installationCharges,
-    installationGstRate,
-  ]);
+  }, [items, freightCharges, freightGstRate, installationCharges, installationGstRate]);
 
   const handleApprove = async () => {
     if (!selectedQuotation) return;
@@ -271,12 +263,12 @@ export default function QuotationApprovalPage() {
           brand: it.brand,
           model: it.model,
           qty: Number(it.qty || 0),
-          unitPrice: Number(it.unitPrice || 0), // Vendor Price (Final)
-          targetPrice: Number(it.targetPrice || 0), // Target Price (Saved back to DB)
+          unitPrice: Number(it.unitPrice || 0),
+          targetPrice: Number(it.targetPrice || 0),
           gstRate: Number(it.gstRate || 0),
         })),
-        remarksForSalesperson: remarksForSalesperson,
-        internalRemarks: internalRemarks,
+        remarksForSalesperson,
+        internalRemarks,
         freightCharges: Number(freightCharges || 0),
         freightGstRate: Number(freightGstRate || 0),
         installationCharges: Number(installationCharges || 0),
@@ -284,18 +276,11 @@ export default function QuotationApprovalPage() {
         validUntil: validUntil ? validUntil.toISOString() : null,
       };
 
-      const headers = getAuthHeaders();
-      const res = await axios.post(
-        `/api/quotations/${selectedQuotation._id}/approve`,
-        payload,
-        { headers }
-      );
-
+      const res = await axios.post(`/api/quotations/${selectedQuotation._id}/approve`, payload, { headers: getAuthHeaders() });
       toast.success(res.data?.message || "Quotation approved");
       closeDialog();
       await loadQuotations();
     } catch (err) {
-      console.error("Approve error:", err);
       const msg = err?.response?.data?.message || "Failed to approve quotation";
       setErrorMsg(msg);
       toast.error(msg);
@@ -305,25 +290,21 @@ export default function QuotationApprovalPage() {
   };
 
   const handleReject = async (quotationId) => {
-    if (!window.confirm("Are you sure you want to reject this quotation?"))
-      return;
+    if (!window.confirm("Are you sure you want to reject this quotation?")) return;
     setActionInProgress(true);
     try {
-      const headers = getAuthHeaders();
-      await axios.post(
-        `/api/quotations/${quotationId}/reject`,
-        {},
-        { headers }
-      );
+      await axios.post(`/api/quotations/${quotationId}/reject`, {}, { headers: getAuthHeaders() });
       toast.info("Quotation rejected");
       await loadQuotations();
     } catch (err) {
-      console.error("Reject error:", err);
       toast.error("Failed to reject quotation");
     } finally {
       setActionInProgress(false);
     }
   };
+
+  // Check if dialog is in View Only mode
+  const isReadOnly = selectedQuotation?.status !== "Pending";
 
   return (
     <Box sx={{ p: 3 }}>
@@ -331,43 +312,62 @@ export default function QuotationApprovalPage() {
         Quotation Approvals
       </Typography>
 
-      <Box
-        sx={{
-          display: "flex",
-          gap: 2,
-          mb: 2,
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Status</InputLabel>
-          <Select
-            value={statusFilter}
-            label="Status"
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <MenuItem value="Pending">Pending</MenuItem>
-            <MenuItem value="Approved">Approved</MenuItem>
-            <MenuItem value="Rejected">Rejected</MenuItem>
-            <MenuItem value="All">All</MenuItem>
-          </Select>
-        </FormControl>
+      <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={2}>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select value={statusFilter} label="Status" onChange={(e) => setStatusFilter(e.target.value)}>
+                <MenuItem value="Pending">Pending</MenuItem>
+                <MenuItem value="Approved">Approved</MenuItem>
+                <MenuItem value="Rejected">Rejected</MenuItem>
+                <MenuItem value="All">All</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <TextField
+              size="small"
+              fullWidth
+              label="Search Opportunity / Customer"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </Grid>
+          <Grid item xs={12} sm={2}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="From Date"
+                value={startDate}
+                onChange={(v) => setStartDate(v)}
+                renderInput={(params) => <TextField size="small" fullWidth {...params} />}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={2}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="To Date"
+                value={endDate}
+                onChange={(v) => setEndDate(v)}
+                renderInput={(params) => <TextField size="small" fullWidth {...params} />}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" onClick={loadQuotations} disabled={loadingList} fullWidth>
+                Refresh
+              </Button>
+              <Button variant="contained" color="success" startIcon={<Download />} onClick={handleExportExcel} fullWidth>
+                Excel
+              </Button>
+            </Stack>
+          </Grid>
+        </Grid>
+      </Paper>
 
-        <Button
-          variant="outlined"
-          onClick={loadQuotations}
-          disabled={loadingList}
-        >
-          Refresh
-        </Button>
-      </Box>
-
-      {errorMsg && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {errorMsg}
-        </Alert>
-      )}
+      {errorMsg && <Alert severity="error" sx={{ mb: 2 }}>{errorMsg}</Alert>}
 
       <Paper variant="outlined">
         <TableContainer>
@@ -383,475 +383,118 @@ export default function QuotationApprovalPage() {
                 <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
-
             <TableBody>
               {loadingList ? (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    <CircularProgress size={24} />
-                  </TableCell>
-                </TableRow>
-              ) : quotations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    No quotations found.
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={7} align="center"><CircularProgress size={24} /></TableCell></TableRow>
+              ) : filteredQuotations.length === 0 ? (
+                <TableRow><TableCell colSpan={7} align="center">No quotations found.</TableCell></TableRow>
               ) : (
-                quotations
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((q) => {
-                    const productsPreview = (
-                      Array.isArray(q.items) && q.items.length
-                        ? q.items
-                        : Array.isArray(q.products)
-                        ? q.products
-                        : []
-                    )
-                      .slice(0, 3)
-                      .map(
-                        (it) => it.productName || it.product || it.description
-                      )
-                      .join(", ");
-                    return (
-                      <TableRow key={q._id}>
-                        <TableCell>{q.deal?.opportunityId || "-"}</TableCell>
-                        <TableCell>
-                          {q.deal?.customer || q.recipientName || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {q.requestedBy?.username ||
-                            q.requestedBy?.firstName ||
-                            "-"}
-                        </TableCell>
-                        <TableCell
-                          style={{
-                            maxWidth: 300,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
+                filteredQuotations.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((q) => (
+                  <TableRow key={q._id}>
+                    <TableCell>{q.deal?.opportunityId || "-"}</TableCell>
+                    <TableCell>{q.deal?.customer || q.recipientName || "-"}</TableCell>
+                    <TableCell>{q.requestedBy?.username || q.requestedBy?.firstName || "-"}</TableCell>
+                    <TableCell sx={{ maxWidth: 300, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {(Array.isArray(q.items) ? q.items : []).map((it) => it.productName || it.product).join(", ") || "-"}
+                    </TableCell>
+                    <TableCell>{q.status}</TableCell>
+                    <TableCell align="right">{q.amount ? `₹ ${Number(q.amount).toLocaleString()}` : "-"}</TableCell>
+                    <TableCell align="center">
+                      <Stack direction="row" spacing={1} justifyContent="center">
+                        {/* REPLACED BUTTON LOGIC: Review for pending, View for approved/rejected */}
+                        <Button 
+                          size="small" 
+                          variant={q.status === "Pending" ? "contained" : "outlined"} 
+                          color={q.status === "Pending" ? "primary" : "info"}
+                          startIcon={q.status === "Pending" ? <Check /> : <Visibility />}
+                          onClick={() => openApproveDialog(q)}
                         >
-                          {productsPreview ||
-                            (typeof q.products === "string" ? q.products : "-")}
-                        </TableCell>
-                        <TableCell>{q.status}</TableCell>
-                        <TableCell align="right">
-                          {q.amount
-                            ? `₹ ${Number(q.amount).toLocaleString()}`
-                            : "-"}
-                        </TableCell>
-                        <TableCell align="center" sx={{ whiteSpace: "nowrap" }}>
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            justifyContent="center"
-                          >
-                            <Button
-                              size="small"
-                              variant="contained"
-                              onClick={() => openApproveDialog(q)}
-                              disabled={q.status !== "Pending"}
-                            >
-                              Review
-                            </Button>
-                            <Button
-                              size="small"
-                              color="error"
-                              variant="outlined"
-                              onClick={() => handleReject(q._id)}
-                              disabled={
-                                q.status !== "Pending" || actionInProgress
-                              }
-                            >
-                              Reject
-                            </Button>
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                          {q.status === "Pending" ? "Review" : "View"}
+                        </Button>
+                        <Button size="small" color="error" variant="outlined" onClick={() => handleReject(q._id)} disabled={q.status !== "Pending" || actionInProgress}>Reject</Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
         </TableContainer>
-
-        <TablePagination
-          component="div"
-          count={quotations.length}
-          page={page}
-          onPageChange={handleChangePage}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          rowsPerPageOptions={[5, 10, 25, 50]}
-        />
+        <TablePagination component="div" count={filteredQuotations.length} page={page} onPageChange={handleChangePage} rowsPerPage={rowsPerPage} onRowsPerPageChange={handleChangeRowsPerPage} />
       </Paper>
 
-      {/* APPROVAL DIALOG */}
-      <Dialog
-        open={openDialog}
-        onClose={closeDialog}
-        maxWidth="lg"
-        fullWidth
-        scroll="paper"
-      >
-        <DialogTitle>Approve Quotation</DialogTitle>
+      <Dialog open={openDialog} onClose={closeDialog} maxWidth="lg" fullWidth scroll="paper">
+        <DialogTitle>{isReadOnly ? "View Quotation Details" : "Approve Quotation"}</DialogTitle>
         <DialogContent dividers>
-          <Typography variant="subtitle1" sx={{ mb: 2 }}>
-            Edit Products (admin can edit any field)
-          </Typography>
 
+          {/* ADDED: Status Alert Banner for View Mode */}
+          {isReadOnly && selectedQuotation && (
+            <Alert severity={selectedQuotation.status === "Approved" ? "success" : "error"} sx={{ mb: 3 }}>
+              This quotation was <strong>{selectedQuotation.status}</strong> on {new Date(selectedQuotation.updatedAt || selectedQuotation.createdAt).toLocaleString()}.
+            </Alert>
+          )}
+
+          <Typography variant="subtitle1" sx={{ mb: 2 }}>{isReadOnly ? "Products Overview" : "Edit Products (admin can edit any field)"}</Typography>
           {items.map((it, idx) => {
-            const base = Number(it.qty || 0) * Number(it.unitPrice || 0);
-            const gstAmount = (base * Number(it.gstRate || 0)) / 100;
-            const rowTotal = base + gstAmount;
-
+            const rowTotal = Number(it.qty || 0) * Number(it.unitPrice || 0) * (1 + Number(it.gstRate || 0) / 100);
             return (
               <Paper key={idx} sx={{ p: 2, mb: 2 }}>
                 <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} sm={5}>
-                    <TextField
-                      fullWidth
-                      label={`Product ${idx + 1} - Name`}
-                      value={it.productName}
-                      onChange={(e) =>
-                        handleItemChange(idx, "productName", e.target.value)
-                      }
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={3}>
-                    <TextField
-                      fullWidth
-                      label="Brand"
-                      value={it.brand}
-                      onChange={(e) =>
-                        handleItemChange(idx, "brand", e.target.value)
-                      }
-                    />
-                  </Grid>
-
+                  <Grid item xs={12} sm={5}><TextField fullWidth label="Product Name" disabled={isReadOnly} value={it.productName} onChange={(e) => handleItemChange(idx, "productName", e.target.value)} /></Grid>
+                  <Grid item xs={12} sm={3}><TextField fullWidth label="Brand" disabled={isReadOnly} value={it.brand} onChange={(e) => handleItemChange(idx, "brand", e.target.value)} /></Grid>
+                  <Grid item xs={12} sm={2}><TextField fullWidth label="Model" disabled={isReadOnly} value={it.model} onChange={(e) => handleItemChange(idx, "model", e.target.value)} /></Grid>
+                  <Grid item xs={6} sm={1}><TextField fullWidth type="number" disabled={isReadOnly} label="Qty" value={it.qty} onChange={(e) => handleItemChange(idx, "qty", e.target.value)} /></Grid>
+                  <Grid item xs={6} sm={1}><TextField fullWidth type="number" label="Target" value={it.targetPrice} disabled variant="filled" /></Grid>
+                  <Grid item xs={6} sm={1}><TextField fullWidth type="number" disabled={isReadOnly} label="Vendor Price" value={it.unitPrice} onChange={(e) => handleItemChange(idx, "unitPrice", e.target.value)} /></Grid>
                   <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Model"
-                      value={it.model}
-                      onChange={(e) =>
-                        handleItemChange(idx, "model", e.target.value)
-                      }
-                    />
-                  </Grid>
-
-                  <Grid item xs={6} sm={1}>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      label="Qty"
-                      value={it.qty}
-                      onChange={(e) =>
-                        handleItemChange(idx, "qty", e.target.value)
-                      }
-                    />
-                  </Grid>
-
-                  {/* --- UPDATED: TARGET PRICE & VENDOR PRICE --- */}
-                  <Grid item xs={6} sm={1}>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      label="Target Price"
-                      value={it.targetPrice}
-                      disabled // Salesperson set this, Admin just views it
-                      InputProps={{ readOnly: true }}
-                      variant="filled"
-                      sx={{ bgcolor: "#f5f5f5" }}
-                    />
-                  </Grid>
-
-                  <Grid item xs={6} sm={1}>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      label="Vendor Price"
-                      value={it.unitPrice}
-                      onChange={(e) =>
-                        handleItemChange(idx, "unitPrice", e.target.value)
-                      }
-                    />
-                  </Grid>
-                  {/* ------------------------------------------- */}
-
-                  <Grid item xs={12} sm={2}>
-                    <FormControl fullWidth>
+                    <FormControl fullWidth disabled={isReadOnly}>
                       <InputLabel>GST (%)</InputLabel>
-                      <Select
-                        value={it.gstRate}
-                        label="GST (%)"
-                        onChange={(e) =>
-                          handleItemChange(idx, "gstRate", e.target.value)
-                        }
-                      >
-                        {GST_SLABS.map((r) => (
-                          <MenuItem key={r} value={r}>
-                            {r}%
-                          </MenuItem>
-                        ))}
+                      <Select value={it.gstRate} label="GST (%)" onChange={(e) => handleItemChange(idx, "gstRate", e.target.value)}>
+                        {GST_SLABS.map((r) => <MenuItem key={r} value={r}>{r}%</MenuItem>)}
                       </Select>
                     </FormControl>
                   </Grid>
-
-                  <Grid item xs={12} sm={12}>
-                    <TextField
-                      fullWidth
-                      label="Description"
-                      multiline
-                      rows={2}
-                      value={it.description}
-                      onChange={(e) =>
-                        handleItemChange(idx, "description", e.target.value)
-                      }
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={12} sx={{ textAlign: "right" }}>
-                    <Typography variant="body2">
-                      Row total: <strong>₹ {rowTotal.toLocaleString()}</strong>
-                    </Typography>
-                  </Grid>
-
-                  <Grid item xs={12} sm={12} sx={{ textAlign: "right" }}>
-                    {items.length > 1 && (
-                      <IconButton color="error" onClick={() => removeItem(idx)}>
-                        <Delete />
-                      </IconButton>
-                    )}
+                  <Grid item xs={12} sm={12}><TextField fullWidth label="Description" disabled={isReadOnly} multiline rows={2} value={it.description} onChange={(e) => handleItemChange(idx, "description", e.target.value)} /></Grid>
+                  <Grid item xs={12} sx={{ textAlign: "right" }}><Typography variant="body2">Row total: <strong>₹ {rowTotal.toLocaleString()}</strong></Typography></Grid>
+                  <Grid item xs={12} sx={{ textAlign: "right" }}>
+                    {items.length > 1 && !isReadOnly && <IconButton color="error" onClick={() => removeItem(idx)}><Delete /></IconButton>}
                   </Grid>
                 </Grid>
               </Paper>
             );
           })}
-
-          <Box sx={{ mb: 2 }}>
-            <Button startIcon={<Add />} onClick={addItem} variant="outlined">
-              Add Product
-            </Button>
-          </Box>
-
+          
+          {!isReadOnly && <Button startIcon={<Add />} onClick={addItem} variant="outlined" sx={{ mb: 2 }}>Add Product</Button>}
+          
           <Divider sx={{ my: 2 }} />
-
-          <Typography variant="h6">Freight</Typography>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="Freight Charges (₹)"
-                fullWidth
-                type="number"
-                value={freightCharges}
-                onChange={(e) =>
-                  setFreightCharges(
-                    e.target.value === "" ? "" : Number(e.target.value)
-                  )
-                }
-              />
-            </Grid>
-
-            <Grid item xs={12} sm={4}>
-              <FormControl fullWidth sx={{ minWidth: 150 }}>
-                <InputLabel>Freight GST (%)</InputLabel>
-                <Select
-                  value={freightGstRate}
-                  label="Freight GST (%)"
-                  onChange={(e) =>
-                    setFreightGstRate(Number(e.target.value || 0))
-                  }
-                >
-                  {GST_SLABS.map((r) => (
-                    <MenuItem key={r} value={r}>
-                      {r}%
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid
-              item
-              xs={12}
-              sm={4}
-              sx={{ display: "flex", alignItems: "center" }}
-            >
-              <Typography>
-                Freight GST Amount:{" "}
-                <strong>
-                  ₹{" "}
-                  {(
-                    (Number(freightCharges || 0) *
-                      Number(freightGstRate || 0)) /
-                    100
-                  ).toLocaleString()}
-                </strong>
-              </Typography>
-            </Grid>
-          </Grid>
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography variant="h6">Installation</Typography>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="Installation Charges (₹)"
-                fullWidth
-                type="number"
-                value={installationCharges}
-                onChange={(e) =>
-                  setInstallationCharges(
-                    e.target.value === "" ? "" : Number(e.target.value)
-                  )
-                }
-              />
-            </Grid>
-
-            <Grid item xs={12} sm={4}>
-              <FormControl fullWidth sx={{ minWidth: 150 }}>
-                <InputLabel>Installation GST (%)</InputLabel>
-                <Select
-                  value={installationGstRate}
-                  label="Installation GST (%)"
-                  onChange={(e) =>
-                    setInstallationGstRate(Number(e.target.value || 0))
-                  }
-                >
-                  {GST_SLABS.map((r) => (
-                    <MenuItem key={r} value={r}>
-                      {r}%
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid
-              item
-              xs={12}
-              sm={4}
-              sx={{ display: "flex", alignItems: "center" }}
-            >
-              <Typography>
-                Inst. GST Amount:{" "}
-                <strong>
-                  ₹ {totals.installationGstAmount.toLocaleString()}
-                </strong>
-              </Typography>
-            </Grid>
-          </Grid>
-
-          <Divider sx={{ my: 2 }} />
-
+          <Typography variant="h6">Freight & Installation</Typography>
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  label="Valid Until"
-                  value={validUntil}
-                  onChange={(v) => setValidUntil(v)}
-                  renderInput={(params) => <TextField fullWidth {...params} />}
-                />
-              </LocalizationProvider>
+            <Grid item xs={12} sm={3}><TextField label="Freight (₹)" disabled={isReadOnly} fullWidth type="number" value={freightCharges} onChange={(e) => setFreightCharges(Number(e.target.value))} /></Grid>
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth disabled={isReadOnly}><InputLabel>Freight GST</InputLabel>
+                <Select value={freightGstRate} onChange={(e) => setFreightGstRate(Number(e.target.value))}>
+                  {GST_SLABS.map((r) => <MenuItem key={r} value={r}>{r}%</MenuItem>)}
+                </Select>
+              </FormControl>
             </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Remarks for Salesperson"
-                fullWidth
-                multiline
-                rows={2}
-                value={remarksForSalesperson}
-                onChange={(e) => setRemarksForSalesperson(e.target.value)}
-              />
-            </Grid>
-
-            <Grid item xs={12}>
-              <TextField
-                label="Internal Remarks (not visible to customer)"
-                fullWidth
-                multiline
-                rows={3}
-                value={internalRemarks}
-                onChange={(e) => setInternalRemarks(e.target.value)}
-              />
+            <Grid item xs={12} sm={3}><TextField label="Installation (₹)" disabled={isReadOnly} fullWidth type="number" value={installationCharges} onChange={(e) => setInstallationCharges(Number(e.target.value))} /></Grid>
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth disabled={isReadOnly}><InputLabel>Inst. GST</InputLabel>
+                <Select value={installationGstRate} onChange={(e) => setInstallationGstRate(Number(e.target.value))}>
+                  {GST_SLABS.map((r) => <MenuItem key={r} value={r}>{r}%</MenuItem>)}
+                </Select>
+              </FormControl>
             </Grid>
           </Grid>
-
-          <Box sx={{ mt: 3, p: 2, border: "1px solid #eee", borderRadius: 1 }}>
-            <Typography>
-              Items Base Total: ₹ {totals.itemsBaseTotal.toLocaleString()}
-            </Typography>
-            <Typography>
-              Items GST Total: ₹ {totals.itemsGstTotal.toLocaleString()}
-            </Typography>
-            <Typography sx={{ mb: 1 }}>
-              Items Total (incl. GST):{" "}
-              <strong>₹ {totals.itemsTotal.toLocaleString()}</strong>
-            </Typography>
-
-            <Divider sx={{ my: 1 }} />
-
-            <Typography>
-              Freight Charges: ₹ {Number(freightCharges || 0).toLocaleString()}
-            </Typography>
-            <Typography>
-              Freight GST: ₹ {totals.freightGstAmount.toLocaleString()}
-            </Typography>
-
-            <Typography>
-              Installation Charges: ₹{" "}
-              {Number(installationCharges || 0).toLocaleString()}
-            </Typography>
-            <Typography>
-              Installation GST: ₹{" "}
-              {totals.installationGstAmount.toLocaleString()}
-            </Typography>
-
-            <Divider sx={{ my: 1 }} />
-
-            <Typography variant="h6" color="primary">
-              Grand Total: ₹ {totals.grandTotal.toLocaleString()}
-            </Typography>
+          <Box sx={{ mt: 3, p: 2, bgcolor: "#f9f9f9", borderRadius: 1 }}>
+            <Typography variant="h6" color="primary">Grand Total: ₹ {totals.grandTotal.toLocaleString()}</Typography>
           </Box>
-
-          {errorMsg && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {errorMsg}
-            </Alert>
-          )}
         </DialogContent>
-
         <DialogActions>
-          <Button onClick={closeDialog} startIcon={<Close />}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            onClick={() => {
-              if (selectedQuotation) handleReject(selectedQuotation._id);
-            }}
-            disabled={actionInProgress}
-          >
-            Reject
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Check />}
-            onClick={handleApprove}
-            disabled={submittingApprove}
-          >
-            {submittingApprove ? (
-              <CircularProgress size={20} />
-            ) : (
-              "Submit & Save"
-            )}
-          </Button>
+          {/* UPDATED: Contextual Buttons based on mode */}
+          <Button onClick={closeDialog} startIcon={<Close />}>{isReadOnly ? "Close" : "Cancel"}</Button>
+          {!isReadOnly && <Button color="error" onClick={() => selectedQuotation && handleReject(selectedQuotation._id)} disabled={actionInProgress}>Reject</Button>}
+          {!isReadOnly && <Button variant="contained" startIcon={<Check />} onClick={handleApprove} disabled={submittingApprove}>{submittingApprove ? <CircularProgress size={20} /> : "Submit & Save"}</Button>}
         </DialogActions>
       </Dialog>
     </Box>

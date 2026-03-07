@@ -1,42 +1,35 @@
 import React, { useState, useEffect } from "react";
 import GreetingSettings from "../Components/GreetingSettings";
-import {
-  Box,
-  Typography,
-  Paper,
-  Button,
-  Grid,
-  Divider,
-  Alert,
-  CircularProgress,
-  TextField,
+import { 
+  Box, Typography, Paper, Button, Grid, Divider, TextField, 
+  List, ListItem, ListItemText, IconButton, CircularProgress 
 } from "@mui/material";
-import { CloudUpload, Save, Business } from "@mui/icons-material";
+import { CloudUpload, Save, Business, Label, Delete } from "@mui/icons-material";
 import axios from "axios";
 import { toast } from "react-toastify";
 
 const ConfigPage = () => {
-  const [companyName, setCompanyName] = useState(""); // <--- New State
+  const [templates, setTemplates] = useState([]);
+  const [templateName, setTemplateName] = useState("");
+  const [companyName, setCompanyName] = useState(""); 
   const [headerFile, setHeaderFile] = useState(null);
   const [footerFile, setFooterFile] = useState(null);
   const [headerPreview, setHeaderPreview] = useState("");
   const [footerPreview, setFooterPreview] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Fetch existing settings
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const { data } = await axios.get("/api/settings");
-        if (data.companyName) setCompanyName(data.companyName); // <--- Load Name
-        if (data.headerImage) setHeaderPreview(data.headerImage);
-        if (data.footerImage) setFooterPreview(data.footerImage);
-      } catch (err) {
-        console.error("Failed to load settings");
-      }
-    };
     fetchSettings();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const { data } = await axios.get("http://localhost:5000/api/settings");
+      if (data.templates) setTemplates(data.templates);
+    } catch (err) {
+      console.error("Failed to load settings");
+    }
+  };
 
   const handleFileChange = (e, type) => {
     const file = e.target.files[0];
@@ -52,191 +45,105 @@ const ConfigPage = () => {
   };
 
   const handleSaveBranding = async () => {
+    if(!templateName || !companyName) return toast.error("Template Name and Company Name are required");
     setLoading(true);
     const formData = new FormData();
-
-    // Append Company Name
+    formData.append("templateName", templateName);
     formData.append("companyName", companyName);
-
-    // Append Images if changed
     if (headerFile) formData.append("headerImage", headerFile);
     if (footerFile) formData.append("footerImage", footerFile);
 
     try {
-      const { data } = await axios.post(
-        "/api/settings/update-branding",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
-      );
-      toast.success("Branding updated successfully!");
-
-      // Update local state with server response
-      setCompanyName(data.settings.companyName);
-      setHeaderPreview(data.settings.headerImage);
-      setFooterPreview(data.settings.footerImage);
-      setHeaderFile(null);
-      setFooterFile(null);
+      const { data } = await axios.post("http://localhost:5000/api/settings/update-branding", formData, { 
+        headers: { "Content-Type": "multipart/form-data" } 
+      });
+      toast.success("New Template added successfully!");
+      setTemplates(data.settings.templates);
+      
+      // Reset Form
+      setTemplateName(""); setCompanyName("");
+      setHeaderPreview(""); setFooterPreview("");
+      setHeaderFile(null); setFooterFile(null);
     } catch (err) {
-      toast.error("Failed to update branding.");
+      toast.error("Failed to add template.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDeleteTemplate = async (id) => {
+    try {
+      const { data } = await axios.delete(`http://localhost:5000/api/settings/templates/${id}`);
+      setTemplates(data.settings.templates);
+      toast.success("Template deleted");
+    } catch (err) {
+      toast.error("Failed to delete template");
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" sx={{ mb: 3, fontWeight: 700 }}>
-        System Configuration
-      </Typography>
-
+      <Typography variant="h4" sx={{ mb: 3, fontWeight: 700 }}>System Configuration</Typography>
+      
       <Paper sx={{ p: 3, mb: 4, borderRadius: 3 }} elevation={2}>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-          Quotation PDF Branding
-        </Typography>
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Set your Company Name and upload Header/Footer images for PDFs.
-        </Alert>
-
-        {/* --- COMPANY NAME INPUT --- */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Company Name (Displayed in PDF)
-          </Typography>
-          <TextField
-            fullWidth
-            placeholder="e.g. Your Company Pvt Ltd"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <Business sx={{ color: "action.active", mr: 1, my: 0.5 }} />
-              ),
-            }}
-          />
-        </Box>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>Create New PDF Template</Typography>
+        
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid item xs={12} md={6}>
+            <TextField 
+              fullWidth label="Template Name (e.g., Brand A)" 
+              value={templateName} onChange={(e) => setTemplateName(e.target.value)} 
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField 
+              fullWidth label="Company Name (Displayed on PDF)" 
+              value={companyName} onChange={(e) => setCompanyName(e.target.value)} 
+            />
+          </Grid>
+        </Grid>
 
         <Grid container spacing={4}>
           <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Header Image
-            </Typography>
-            <Box
-              sx={{
-                height: 120,
-                border: "2px dashed #ccc",
-                borderRadius: 2,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                mb: 2,
-                bgcolor: "#f9f9f9",
-              }}
-            >
-              {headerPreview ? (
-                <img
-                  src={headerPreview}
-                  alt="Header"
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                  }}
-                />
-              ) : (
-                <Typography color="text.secondary">No Header Set</Typography>
-              )}
+            <Box sx={{ height: 120, border: "2px dashed #ccc", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", mb: 2 }}>
+              {headerPreview ? <img src={headerPreview} alt="Header" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Typography color="text.secondary">No Header Set</Typography>}
             </Box>
-            <Button
-              variant="outlined"
-              component="label"
-              startIcon={<CloudUpload />}
-              fullWidth
-            >
-              Select Header
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={(e) => handleFileChange(e, "header")}
-              />
+            <Button variant="outlined" component="label" startIcon={<CloudUpload />} fullWidth>
+              Select Header <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, "header")} />
             </Button>
           </Grid>
 
           <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Footer Image
-            </Typography>
-            <Box
-              sx={{
-                height: 120,
-                border: "2px dashed #ccc",
-                borderRadius: 2,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                mb: 2,
-                bgcolor: "#f9f9f9",
-              }}
-            >
-              {footerPreview ? (
-                <img
-                  src={footerPreview}
-                  alt="Footer"
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                  }}
-                />
-              ) : (
-                <Typography color="text.secondary">No Footer Set</Typography>
-              )}
+            <Box sx={{ height: 120, border: "2px dashed #ccc", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", mb: 2 }}>
+              {footerPreview ? <img src={footerPreview} alt="Footer" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Typography color="text.secondary">No Footer Set</Typography>}
             </Box>
-            <Button
-              variant="outlined"
-              component="label"
-              startIcon={<CloudUpload />}
-              fullWidth
-            >
-              Select Footer
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={(e) => handleFileChange(e, "footer")}
-              />
+            <Button variant="outlined" component="label" startIcon={<CloudUpload />} fullWidth>
+              Select Footer <input type="file" hidden accept="image/*" onChange={(e) => handleFileChange(e, "footer")} />
             </Button>
           </Grid>
         </Grid>
 
-        <Divider sx={{ my: 3 }} />
-
-        <Box display="flex" justifyContent="flex-end">
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={
-              loading ? (
-                <CircularProgress size={20} color="inherit" />
-              ) : (
-                <Save />
-              )
-            }
-            onClick={handleSaveBranding}
-            disabled={loading}
-          >
-            {loading ? "Saving..." : "Save Branding Changes"}
+        <Box display="flex" justifyContent="flex-end" sx={{ mt: 3 }}>
+          <Button variant="contained" size="large" startIcon={loading ? <CircularProgress size={20} /> : <Save />} onClick={handleSaveBranding} disabled={loading}>
+            Save New Template
           </Button>
         </Box>
-      </Paper>
 
+        <Divider sx={{ my: 4 }} />
+
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>Saved Templates</Typography>
+        {templates.length === 0 ? <Typography color="text.secondary">No templates saved yet.</Typography> : (
+          <List>
+            {templates.map(t => (
+              <ListItem key={t._id} secondaryAction={ <IconButton edge="end" color="error" onClick={() => handleDeleteTemplate(t._id)}><Delete /></IconButton> }>
+                <ListItemText primary={t.name} secondary={`Company Name: ${t.companyName}`} />
+              </ListItem>
+            ))}
+          </List>
+        )}
+      </Paper>
       <GreetingSettings />
     </Box>
   );
 };
-
 export default ConfigPage;
